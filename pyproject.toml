@@ -1,0 +1,60 @@
+[project]
+name = "mantella"
+version = "0.13.1"
+description = "Speak with NPCs in Skyrim and Fallout 4 using speech-to-text, LLMs and text-to-speech"
+readme = "README.md"
+license = "AGPL-3.0-only"
+requires-python = "==3.11.*"
+# Mirrors requirements.txt at v0.13.1 (docs packages moved to the docs group).
+# This is the app version the Fallout 4 mod scripts (Mantella.esp 0.9.0) speak to.
+dependencies = [
+    "pandas==1.5.3",
+    "tiktoken==0.4.0",
+    "httpx==0.27.2",
+    "openai==1.6.0",
+    "aiohttp==3.8.4",
+    "faster-whisper==1.0.3",
+    "requests==2.31.0",
+    "pyaudio==0.2.13",
+    "soundfile==0.12.1",
+    "numpy==1.25.0",
+    "scipy==1.11.1",
+    "charset-normalizer==3.2.0",
+    "fastapi==0.110.2",
+    "gradio==4.28.3",
+    # Not in v0.13.1's requirements.txt; later upstream pin. gradio 4.28 imports HfFolder, removed in 0.25.
+    "huggingface_hub<0.25",
+    "pywin32==306",
+    "mss==9.0.1",
+    "opencv-python==4.10.0.84",
+    "sounddevice==0.5.1",
+    "silero_vad==5.1.2",
+    "useful-moonshine-onnx",
+]
+
+[dependency-groups]
+dev = [
+    "pytest==8.3.5",
+    "pytest-cov",
+    "pytest-asyncio==0.26.0",
+    "pytest-mock",
+    "pytest-timeout",
+]
+docs = [
+    "sphinx==7.2.6",
+    "myst-parser==2.0.0",
+    "sphinx-design==0.5.0",
+    "sphinxcontrib-youtube==1.4.1",
+    "furo==2023.9.10",
+]
+
+[tool.uv]
+# Mantella is an app, not a library: don't build or install it into the venv.
+package = false
+# Mantella only runs on Windows; lock for Windows only.
+environments = ["sys_platform == 'win32'"]
+# moonshine-onnx's setup.py imports pkg_resources, which setuptools 81 removed.
+build-constraint-dependencies = ["setuptools<81"]
+
+[tool.uv.sources]
+useful-moonshine-onnx = { git = "https://github.com/usefulsensors/moonshine.git", rev = "2f6282347950c8d711bd7319287babb87ec5a92d", subdirectory = "moonshine-onnx" }
