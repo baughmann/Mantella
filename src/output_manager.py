@@ -12,7 +12,7 @@ from src.llm.output.actions_parser import actions_parser
 from src.llm.output.change_character_parser import change_character_parser
 from src.llm.output.narration_parser import narration_parser
 from src.llm.output.output_parser import output_parser, sentence_generation_settings
-from src.llm.output.sentence_end_parser import sentence_end_parser
+from src.llm.output.sentence_end_parser import END_OF_OUTPUT, sentence_end_parser
 from src.llm.sentence_content import SentenceTypeEnum, SentenceContent
 from src.conversation.action import Action
 from src.llm.sentence_queue import SentenceQueue
@@ -140,6 +140,30 @@ class ChatManager:
                 cut_indicators.add(i)
         accumulator: sentence_accumulator = sentence_accumulator(list(cut_indicators))
        
+        def drain() -> None:
+            """Run every complete sentence in the accumulator through the parser chain and queue the spoken ones."""
+            nonlocal parsed_sentence, pending_sentence, current_sentence
+            while accumulator.has_next_sentence():
+                current_sentence = accumulator.get_next_sentence()
+                parsed_sentence = None
+                # Apply parsers
+                for parser in parser_chain:
+                    if not parsed_sentence:  # Try to extract a complete sentence
+                        parsed_sentence, current_sentence = parser.cut_sentence(current_sentence, settings)
+                    if parsed_sentence:  # Apply modifications if we already have a sentence
+                        parsed_sentence, pending_sentence = parser.modify_sentence_content(parsed_sentence, pending_sentence, settings)
+                    if settings.stop_generation:
+                        break
+                if settings.stop_generation:
+                    return
+                accumulator.refuse(current_sentence)
+                # Process sentences from the parser chain
+                if parsed_sentence:
+                    if not self.__config.narration_handling == NarrationHandlingEnum.CUT_NARRATIONS or parsed_sentence.sentence_type != SentenceTypeEnum.NARRATION:
+                        new_sentence = self.generate_sentence(parsed_sentence)
+                        blocking_queue.put(new_sentence)
+                        parsed_sentence = None
+
         try:
             current_sentence: str = ''
             settings: sentence_generation_settings = sentence_generation_settings(active_character)
@@ -158,29 +182,13 @@ class ChatManager:
                         
                         raw_response += content
                         accumulator.accumulate(content)
-                        while accumulator.has_next_sentence():
-                            current_sentence = accumulator.get_next_sentence()
-                            # current_sentence += content
-                            parsed_sentence: SentenceContent | None = None
-                            # Apply parsers
-                            for parser in parser_chain:
-                                if not parsed_sentence:  # Try to extract a complete sentence
-                                    parsed_sentence, current_sentence = parser.cut_sentence(current_sentence, settings)
-                                if parsed_sentence:  # Apply modifications if we already have a sentence
-                                    parsed_sentence, pending_sentence = parser.modify_sentence_content(parsed_sentence, pending_sentence, settings)
-                                if settings.stop_generation:
-                                    break
-                            if settings.stop_generation:
-                                break
-                            accumulator.refuse(current_sentence)
-                            # Process sentences from the parser chain
-                            if parsed_sentence:
-                                if not self.__config.narration_handling == NarrationHandlingEnum.CUT_NARRATIONS or parsed_sentence.sentence_type != SentenceTypeEnum.NARRATION:
-                                    new_sentence = self.generate_sentence(parsed_sentence)
-                                    blocking_queue.put(new_sentence)
-                                    parsed_sentence = None
+                        drain()
                         if settings.stop_generation:
                                 break
+                    if not self.__stop_generation.is_set() and not settings.stop_generation:
+                        # Stream complete: flush text after the last sentence end (e.g. a reply ending in "...")
+                        accumulator.accumulate(END_OF_OUTPUT)
+                        drain()
                     break #if the streaming_call() completed without exception, break the while loop
                             
                 except Exception as e:

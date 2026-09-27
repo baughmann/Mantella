@@ -19,7 +19,14 @@ class sentence_accumulator:
     def has_next_sentence(self) -> bool:
         if len(self.__prepared_match) > 0:
             return True
-        
+
+        # Refused text ending in '.' is waiting to learn whether it is a full stop or the start of an
+        # ellipsis (see sentence_end_parser): hand over the next character as soon as it arrives.
+        if self.__unparseable.endswith('.') and self.__cleaned_llm_output:
+            self.__prepared_match = self.__cleaned_llm_output[0]
+            self.__cleaned_llm_output = self.__cleaned_llm_output[1:]
+            return True
+
         match = self.__sentence_end_reg.match(self.__cleaned_llm_output)
         if not match:
             return False

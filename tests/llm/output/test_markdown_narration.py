@@ -10,14 +10,21 @@ from src.llm.output.change_character_parser import change_character_parser
 from src.llm.output.narration_parser import narration_parser
 from src.llm.output.output_parser import output_parser, sentence_generation_settings
 from src.llm.output.sentence_accumulator import sentence_accumulator
-from src.llm.output.sentence_end_parser import sentence_end_parser
+from src.llm.output.sentence_end_parser import END_OF_OUTPUT, sentence_end_parser
 from src.llm.sentence_content import SentenceTypeEnum
 
 NARRATION_START = ["(", "["]
 NARRATION_END = [")", "]"]
 
 
-def spoken_lines(text: str, characters: Characters, speaker: Character, chunk: int = 3) -> list[tuple[str, str]]:
+def spoken_lines(text: str, characters: Characters, speaker: Character) -> list[tuple[str, str]]:
+    """Parse `text` streamed in 1-, 3- and 50-character chunks; the result must not depend on chunking."""
+    results = [_spoken_lines(text, characters, speaker, chunk) for chunk in (1, 3, 50)]
+    assert results[0] == results[1] == results[2], f"chunking changed the output: {results}"
+    return results[0]
+
+
+def _spoken_lines(text: str, characters: Characters, speaker: Character, chunk: int) -> list[tuple[str, str]]:
     chain: list[output_parser] = [
         change_character_parser(characters),
         narration_parser(NARRATION_START, NARRATION_END, [], []),
@@ -27,8 +34,10 @@ def spoken_lines(text: str, characters: Characters, speaker: Character, chunk: i
     settings = sentence_generation_settings(speaker)
     pending = None
     out: list[tuple[str, str]] = []
-    for start in range(0, len(text), chunk):  # stream it token-ish, like the LLM does
-        accumulator.accumulate(text[start:start + chunk])
+    # stream it token-ish, like the LLM does, then the end-of-stream flush ChatManager adds
+    chunks = [text[start:start + chunk] for start in range(0, len(text), chunk)] + [END_OF_OUTPUT]
+    for piece in chunks:
+        accumulator.accumulate(piece)
         while accumulator.has_next_sentence():
             current = accumulator.get_next_sentence()
             parsed = None
@@ -82,3 +91,22 @@ def test_star_bracket_stage_direction_is_cut_but_dialogue_kept(cast):
     spoken = " ".join(t for _, t in lines)
     assert "hey there" in spoken and "Not too bad." in spoken and "you looking for something?" in spoken
     assert "*" not in spoken and "scratches" not in spoken and "sigh" not in spoken
+
+
+def test_ellipsis_does_not_split_a_sentence(cast):
+    """Real reply that was voiced as three fragments: 'To get to the...' / 'the other side...' / 'of the radiation zone.'"""
+    chars, npc = cast
+    lines = spoken_lines("Uh... why did the ghoul cross the road? To get to the... the other side... of the radiation zone.", chars, npc)
+    assert [t for _, t in lines] == ["Uh... why did the ghoul cross the road?", "To get to the... the other side... of the radiation zone."]
+
+
+def test_reply_ending_in_ellipsis_is_still_spoken(cast):
+    chars, npc = cast
+    lines = spoken_lines("A joke? Now that's... a new one. If you know who to sell to...", chars, npc)
+    assert [t for _, t in lines] == ["A joke?", "Now that's... a new one.", "If you know who to sell to..."]
+
+
+def test_tail_without_punctuation_is_flushed(cast):
+    chars, npc = cast
+    lines = spoken_lines("Safe travels. Watch the road", chars, npc)
+    assert [t for _, t in lines] == ["Safe travels.", "Watch the road"]
