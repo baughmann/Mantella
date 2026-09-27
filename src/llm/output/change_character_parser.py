@@ -14,7 +14,10 @@ class change_character_parser(output_parser):
         for actor in characters_in_conversation.get_all_characters():
             if actor.is_player_character:
                 self.__dict_name_permutations["player"] = actor
-            self.__dict_name_permutations[actor.name] = actor
+            # An unnamed player (e.g. a new game started with `coc`) would register '', and every
+            # string ends with '', so any 'Name:' in the LLM output would be treated as the player.
+            if actor.name.strip():
+                self.__dict_name_permutations[actor.name] = actor
         
         split_names_to_add: OrderedDict[str, Character] = OrderedDict()
         for name, character in self.__dict_name_permutations.items():
