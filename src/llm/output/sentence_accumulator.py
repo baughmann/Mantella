@@ -13,7 +13,8 @@ class sentence_accumulator:
         self.__sentence_end_reg = re.compile(base_regex_def.format(sentence_end_chars = "\\" + "\\".join(cut_indicators)))
         self.__unparseable: str = ""
         self.__prepared_match: str = ""
-        self.__cleaner = clean_sentence_parser()
+        # If '*' isn't a narration/cut indicator, asterisks are Markdown emphasis: strip it instead of cutting.
+        self.__cleaner = clean_sentence_parser(strip_markdown='*' not in cut_indicators)
     
     def has_next_sentence(self) -> bool:
         if len(self.__prepared_match) > 0:
